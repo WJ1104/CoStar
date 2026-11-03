@@ -13,7 +13,7 @@ int main() {
     }
 
     std::string line;
-    std::getline(file, line); // Skip the header
+    std::getline(file, line); // Skip the column labels
 
     std::unordered_map<std::string, int> movieIndex;
     std::vector<std::string> movieIds;
@@ -45,7 +45,7 @@ int main() {
     }
 
     std::string actorLine;
-    std::getline(actorFile, actorLine); // Skip the header
+    std::getline(actorFile, actorLine); // Skip the column labels
 
     std::unordered_map<std::string, int> actorIndex;
     std::vector<std::string> actorNames;

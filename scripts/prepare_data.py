@@ -22,7 +22,7 @@ for filename in required_files:
 
 os.makedirs(output_folder, exist_ok=True)
 
-# Keep the IMDb ID and title for each feature film.
+# Pick out the movies and keep their IDs handy.
 movie_titles = {}
 
 with gzip.open(
@@ -38,7 +38,7 @@ with gzip.open(
 
 print("Movies found:", len(movie_titles))
 
-# Find actor and actress IDs credited on those movies.
+# Grab the actor IDs linked to those movies.
 actor_ids = set()
 
 with gzip.open(
@@ -57,7 +57,7 @@ with gzip.open(
 
 print("Actors found:", len(actor_ids))
 
-# Find names for the actor IDs.
+# Match those actor IDs with names.
 actor_names = {}
 
 with gzip.open(
@@ -73,7 +73,7 @@ with gzip.open(
 
 print("Actor names found:", len(actor_names))
 
-# Save the movie lookup table.
+# Write out the movie list.
 with open(
     os.path.join(output_folder, "movies.tsv"),
     "w",
@@ -86,7 +86,7 @@ with open(
     for movie_id, title in movie_titles.items():
         writer.writerow([movie_id, title])
 
-# Save the actor lookup table.
+# Write out the actor list.
 with open(
     os.path.join(output_folder, "actors.tsv"),
     "w",
@@ -99,7 +99,7 @@ with open(
     for actor_id, name in actor_names.items():
         writer.writerow([actor_id, name])
 
-# Save one row for each movie and actor connection.
+# Save the movie-actor links.
 credit_count = 0
 
 with gzip.open(
