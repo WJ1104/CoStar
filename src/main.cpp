@@ -4,6 +4,99 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
+#include <chrono>
+
+// ---------- Bidirectional BFS (added) ----------
+struct BidirResult {
+    bool found = false;
+    std::vector<int> actors;   // chain of actors, start -> target
+    std::vector<int> movies;   // movies[i] connects actors[i] and actors[i+1]
+    long long actorsChecked = 0;
+    long long moviesChecked = 0;
+    double ms = 0.0;
+};
+
+// Expands one full level at a time from the smaller frontier. Finishing the
+// whole level before stopping guarantees the shortest chain.
+BidirResult bidirectionalBfs(const std::vector<std::vector<int>>& actorMovies,
+                             const std::vector<std::vector<int>>& movieActors,
+                             int start, int target) {
+    BidirResult res;
+    auto t0 = std::chrono::steady_clock::now();
+    int n = static_cast<int>(actorMovies.size());
+
+    if (start == target) {
+        res.found = true;
+        res.actors.push_back(start);
+        res.actorsChecked = 1;
+        return res;
+    }
+
+    // Index 0 = forward side (from start), 1 = backward side (from target).
+    std::vector<int> dist[2], parentActor[2], parentMovie[2];
+    std::vector<bool> movieSeen[2];
+    std::vector<int> frontier[2];
+    for (int s = 0; s < 2; s++) {
+        dist[s].assign(n, -1);
+        parentActor[s].assign(n, -1);
+        parentMovie[s].assign(n, -1);
+        movieSeen[s].assign(movieActors.size(), false);
+    }
+    dist[0][start] = 0;
+    frontier[0].push_back(start);
+    dist[1][target] = 0;
+    frontier[1].push_back(target);
+
+    int best = -1, meet = -1;
+
+    while (!frontier[0].empty() && !frontier[1].empty() && best == -1) {
+        int side = (frontier[0].size() <= frontier[1].size()) ? 0 : 1;
+        int other = 1 - side;
+        std::vector<int> next;
+
+        for (int cur : frontier[side]) {
+            res.actorsChecked++;
+            for (int m : actorMovies[cur]) {
+                if (movieSeen[side][m]) continue;
+                movieSeen[side][m] = true;
+                res.moviesChecked++;
+                for (int nb : movieActors[m]) {
+                    if (dist[side][nb] != -1) continue;
+                    dist[side][nb] = dist[side][cur] + 1;
+                    parentActor[side][nb] = cur;
+                    parentMovie[side][nb] = m;
+                    next.push_back(nb);
+                    if (dist[other][nb] != -1) {
+                        int total = dist[side][nb] + dist[other][nb];
+                        if (best == -1 || total < best) {
+                            best = total;
+                            meet = nb;
+                        }
+                    }
+                }
+            }
+        }
+        frontier[side] = std::move(next);
+    }
+
+    if (best != -1) {
+        res.found = true;
+        for (int c = meet; c != start; c = parentActor[0][c]) {
+            res.actors.push_back(c);
+            res.movies.push_back(parentMovie[0][c]);
+        }
+        res.actors.push_back(start);
+        std::reverse(res.actors.begin(), res.actors.end());
+        std::reverse(res.movies.begin(), res.movies.end());
+        for (int c = meet; c != target; c = parentActor[1][c]) {
+            res.movies.push_back(parentMovie[1][c]);
+            res.actors.push_back(parentActor[1][c]);
+        }
+    }
+    res.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    return res;
+}
 
 int main() {
     std::ifstream file("data/processed/movies.tsv");
@@ -192,6 +285,28 @@ int main() {
         std::cout << "\n";
     } else {
         std::cout << "\nNo connection found between the selected actors.\n";
+    }
+
+    // ---------- Bidirectional BFS run (added) ----------
+    BidirResult bidi = bidirectionalBfs(actorMovies, movieActors, startActorIdx, targetActorIdx);
+
+    std::cout << "\nBidirectional BFS chain:\n";
+    if (bidi.found) {
+        for (std::size_t i = 0; i < bidi.actors.size(); i++) {
+            std::cout << actorNames[bidi.actors[i]];
+            if (i + 1 < bidi.actors.size()) {
+                std::cout << " appeared in [" << movieTitles[bidi.movies[i]] << "] -> ";
+            }
+        }
+        std::cout << "\n";
+    } else {
+        std::cout << "No connection found between the selected actors.\n";
+    }
+    std::cout << "Bidirectional: " << bidi.ms << " ms, "
+              << bidi.actorsChecked << " actors expanded, "
+              << bidi.moviesChecked << " movies expanded\n";
+    if (bidi.found != found) {
+        std::cout << "WARNING: BFS and bidirectional BFS disagree!\n";
     }
 
     return 0;
