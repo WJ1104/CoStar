@@ -155,6 +155,86 @@ static SearchResult bfsSearch(const Graph& g, int src, int dst) {
     return r;
 }
 
+// Bidirectional BFS: search from both actors at once and stop when the two
+// searches meet. Each turn expands one whole level of the smaller frontier;
+// finishing the level before stopping keeps the chain as short as possible.
+static SearchResult bidirectionalSearch(const Graph& g, int src, int dst) {
+    auto t0 = std::chrono::steady_clock::now();
+    SearchResult r;
+    std::size_t A = g.actorNames.size(), M = g.movieTitles.size();
+
+    if (src == dst) {
+        r.found = true;
+        r.actors.push_back(src);
+        r.actorsChecked = 1;
+        return r;
+    }
+
+    // Side 0 searches from src, side 1 searches from dst.
+    std::vector<int> dist[2], parentActor[2], parentMovie[2];
+    std::vector<char> movieSeen[2];
+    std::vector<int> frontier[2];
+    for (int s = 0; s < 2; s++) {
+        dist[s].assign(A, -1);
+        parentActor[s].assign(A, -1);
+        parentMovie[s].assign(A, -1);
+        movieSeen[s].assign(M, 0);
+    }
+    dist[0][src] = 0;
+    dist[1][dst] = 0;
+    frontier[0].push_back(src);
+    frontier[1].push_back(dst);
+    std::size_t peakFrontier = 1;
+
+    int best = -1, meet = -1;
+    while (!frontier[0].empty() && !frontier[1].empty() && best == -1) {
+        int side = (frontier[0].size() <= frontier[1].size()) ? 0 : 1;
+        int other = 1 - side;
+        std::vector<int> next;
+        for (int u : frontier[side]) {
+            r.actorsChecked++;
+            for (int m : g.actorMovies[u]) {
+                if (movieSeen[side][m]) continue;
+                movieSeen[side][m] = 1;
+                r.moviesChecked++;
+                for (int v : g.movieActors[m]) {
+                    if (dist[side][v] != -1) continue;
+                    dist[side][v] = dist[side][u] + 1;
+                    parentActor[side][v] = u;
+                    parentMovie[side][v] = m;
+                    next.push_back(v);
+                    if (dist[other][v] != -1) {
+                        int total = dist[side][v] + dist[other][v];
+                        if (best == -1 || total < best) { best = total; meet = v; }
+                    }
+                }
+            }
+        }
+        frontier[side] = std::move(next);
+        peakFrontier = std::max(peakFrontier, std::max(frontier[0].size(), frontier[1].size()));
+    }
+
+    if (best != -1) {
+        r.found = true;
+        // src ... meet
+        for (int cur = meet; cur != src; cur = parentActor[0][cur]) {
+            r.actors.push_back(cur);
+            r.movies.push_back(parentMovie[0][cur]);
+        }
+        r.actors.push_back(src);
+        std::reverse(r.actors.begin(), r.actors.end());
+        std::reverse(r.movies.begin(), r.movies.end());
+        // meet ... dst
+        for (int cur = meet; cur != dst; cur = parentActor[1][cur]) {
+            r.movies.push_back(parentMovie[1][cur]);
+            r.actors.push_back(parentActor[1][cur]);
+        }
+    }
+    r.bytes = 2 * (A * 3 * sizeof(int) + M) + peakFrontier * sizeof(int);
+    r.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    return r;
+}
+
 static void printChain(const Graph& g, const SearchResult& r) {
     if (!r.found) { std::cout << "No connection found between these actors.\n"; return; }
     for (std::size_t i = 0; i < r.actors.size(); i++) {
@@ -162,7 +242,7 @@ static void printChain(const Graph& g, const SearchResult& r) {
         if (i < r.movies.size()) std::cout << " -> " << g.movieTitles[r.movies[i]] << " -> ";
     }
     std::size_t n = r.movies.size();
-    std::cout << "\n(" << n << " movie" << (n == 1 ? "" : "s") << " apart, found with BFS)\n";
+    std::cout << "\n(" << n << " movie" << (n == 1 ? "" : "s") << " apart)\n";
 }
 
 
@@ -233,7 +313,7 @@ static void runBenchmark(const Graph& g, int pairs) {
     std::filesystem::create_directories("results");
     std::ofstream csv("results/benchmark.csv");
     if (!csv) { std::cout << "Could not write results/benchmark.csv\n"; return; }
-    csv << "length,time_ms,actors_checked,movies_checked,bytes\n";
+    csv << "algorithm,length,time_ms,actors_checked,movies_checked,bytes\n";
 
     std::vector<int> eligible;  
     for (std::size_t i = 0; i < g.actorMovies.size(); i++)
@@ -243,30 +323,41 @@ static void runBenchmark(const Graph& g, int pairs) {
     std::mt19937 rng(42);  
     std::uniform_int_distribution<std::size_t> pick(0, eligible.size() - 1);
 
-    std::map<int, Totals> byLength;
-    Totals all;
-    int skipped = 0;
+    std::map<int, Totals> byLengthBfs, byLengthBi;
+    Totals all, allBi;
+    int skipped = 0, mismatches = 0;
     for (long tries = 0; all.count < pairs && tries < static_cast<long>(pairs) * 20; tries++) {
         int a = eligible[pick(rng)], b = eligible[pick(rng)];
         if (a == b) continue;
         SearchResult r = bfsSearch(g, a, b);
         if (!r.found) { skipped++; continue; }  
+        SearchResult rb = bidirectionalSearch(g, a, b);
         int len = static_cast<int>(r.movies.size());
-        csv << len << ',' << r.ms << ',' << r.actorsChecked << ',' << r.moviesChecked << ',' << r.bytes << '\n';
-        byLength[len].add(r);
+        if (!rb.found || rb.movies.size() != r.movies.size()) mismatches++;
+        csv << "bfs," << len << ',' << r.ms << ',' << r.actorsChecked << ',' << r.moviesChecked << ',' << r.bytes << '\n';
+        csv << "bidirectional," << len << ',' << rb.ms << ',' << rb.actorsChecked << ',' << rb.moviesChecked << ',' << rb.bytes << '\n';
+        byLengthBfs[len].add(r);
+        byLengthBi[len].add(rb);
         all.add(r);
+        allBi.add(rb);
         if (all.count % 50 == 0) std::cout << "  " << all.count << " / " << pairs << " pairs done\n";
     }
 
-    std::printf("\nBFS on %ld random pairs (%d unconnected pairs skipped)\n", all.count, skipped);
+    std::printf("\nBFS and bidirectional BFS on %ld random pairs (%d unconnected pairs skipped)\n", all.count, skipped);
     if (all.count == 0) return;
-    std::printf("%-8s %6s %12s %16s %16s %14s\n", "Movies", "Pairs", "Avg ms", "Avg actors", "Avg movies", "Avg MB");
-    auto row = [](const char* label, const Totals& t) {
-        std::printf("%-8s %6ld %12.2f %16.0f %16.0f %14.1f\n", label, t.count, t.ms / t.count,
+    if (mismatches > 0) std::printf("WARNING: the two searches disagreed on %d pairs!\n", mismatches);
+    std::printf("%-8s %-14s %6s %12s %16s %16s %14s\n", "Movies", "Algorithm", "Pairs", "Avg ms", "Avg actors", "Avg movies", "Avg MB");
+    auto row = [](const char* label, const char* algo, const Totals& t) {
+        std::printf("%-8s %-14s %6ld %12.2f %16.0f %16.0f %14.1f\n", label, algo, t.count, t.ms / t.count,
                     t.actors / t.count, t.movies / t.count, t.bytes / t.count / 1048576.0);
     };
-    for (const auto& kv : byLength) row(std::to_string(kv.first).c_str(), kv.second);
-    row("all", all);
+    for (const auto& kv : byLengthBfs) {
+        std::string label = std::to_string(kv.first);
+        row(label.c_str(), "BFS", kv.second);
+        row("", "Bidirectional", byLengthBi[kv.first]);
+    }
+    row("all", "BFS", all);
+    row("", "Bidirectional", allBi);
     std::cout << "Saved every search to results/benchmark.csv\n";
 }
 
@@ -283,7 +374,7 @@ int main() {
                   << "   " << g.actorNames.size() << " actors | " << g.movieTitles.size() << " movies loaded\n"
                   << "+-------------------------------------------+\n"
                   << "  1. Find the connection between 2 actors\n"
-                  << "  2. Run benchmark on random pairs\n"
+                  << "  2. Run benchmark (BFS vs bidirectional BFS)\n"
                   << "  3. Exit\n> ";
         std::string line;
         if (!std::getline(std::cin, line)) break;
@@ -297,9 +388,14 @@ int main() {
             int b = chooseActor(g, "Second actor: ");
             if (b < 0) continue;
             SearchResult r = bfsSearch(g, a, b);
+            SearchResult rb = bidirectionalSearch(g, a, b);
             std::cout << "\n";
-            printChain(g, r);
-            std::printf("Checked %ld actors and %ld movies in %.2f ms.\n", r.actorsChecked, r.moviesChecked, r.ms);
+            printChain(g, rb);
+            if (r.found) {
+                std::printf("BFS:           checked %ld actors and %ld movies in %.2f ms.\n", r.actorsChecked, r.moviesChecked, r.ms);
+                std::printf("Bidirectional: checked %ld actors and %ld movies in %.2f ms.\n", rb.actorsChecked, rb.moviesChecked, rb.ms);
+                if (r.movies.size() != rb.movies.size()) std::cout << "WARNING: the two searches disagree on the chain length!\n";
+            }
         } else if (choice == 2) {
             std::cout << "How many random pairs? (default 1000) ";
             std::string n;
