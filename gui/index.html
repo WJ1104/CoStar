@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CoStar</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
@@ -59,6 +64,8 @@ canvas:active { cursor: grabbing; }
 
 @media (max-width: 820px) { .panes { grid-template-columns: 1fr; } }
 </style>
+</head>
+<body>
 
 <main class="app">
   <header>
@@ -99,7 +106,7 @@ const $ = s => document.querySelector(s);
 const fmt = n => n.toLocaleString();
 const tick = () => new Promise(r => setTimeout(r, 20));
 
-
+/* ================= Data (filled by loadData) ================= */
 let A = 0, M = 0, N = 0;
 let names = [], titles = [], off = null, adj = null, didx = null;
 
@@ -152,7 +159,7 @@ async function loadData() {
 const labelOf = v => v < A ? names[v] : titles[v - A];
 const degree = v => off[v + 1] - off[v];
 
-
+/* ================= The two searches, run on the full graph ================= */
 function pathFrom(par, x) { const out = []; while (x >= 0) { out.push(x); x = par[x]; } return out; }
 
 function runBfs(src, dst) {
@@ -184,7 +191,7 @@ function runBidir(src, dst) {
   if (src === dst) { best = 0; m0 = src; m1 = dst; }
   while (best === Infinity && fr[0].length && fr[1].length) {
     const s = fr[0].length <= fr[1].length ? 0 : 1, o = 1 - s, next = [];
-    for (const u of fr[s]) {                 
+    for (const u of fr[s]) {                 // finish the whole level before stopping
       order[T++] = u; u >= A ? em++ : ea++;
       for (let k = off[u], e = off[u + 1]; k < e; k++) {
         const v = adj[k];
@@ -204,7 +211,7 @@ function runBidir(src, dst) {
   return { path, order, T, pos, dpar, nside, ea, em, ms };
 }
 
-
+/* ================= Drawing: the path plus a random sample of what each search checked ================= */
 let ND = 0, L = [], ED = [], X = new Float64Array(0), Y = X, VX = X, VY = X;
 const sim = { alpha: 0 }; let dragId = -1, hover = -1, userMoved = false;
 const cam = { x: 0, y: 0, k: 1 };
@@ -376,6 +383,7 @@ for (const v of views) {
   c.addEventListener('dblclick', () => { userMoved = false; fit(); });
 }
 
+/* ================= Name lookup ================= */
 function findActor(q) {
   const t = q.trim().toLowerCase(); if (!t) return { id: -1, count: 0 };
   let best = -1, bd = -1, count = 0;
@@ -404,7 +412,7 @@ for (const [inp, list] of [['#inA', '#namesA'], ['#inB', '#namesB']]) {
   $(inp).addEventListener('input', () => { clearTimeout(sugTimer); sugTimer = setTimeout(() => suggest($(inp).value, $(list)), 200); });
 }
 
-
+/* ================= Run ================= */
 let shown = true, results = null, busy = false;
 async function run() {
   if (busy) return;
@@ -463,3 +471,6 @@ function frame(now) {
 requestAnimationFrame(frame);
 })();
 </script>
+
+</body>
+</html>

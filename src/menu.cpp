@@ -49,7 +49,7 @@ static bool forEachRow(const std::string& path, F onRow) {
         return false;
     }
     std::string line;
-    std::getline(in, line);  // skip the column labels
+    std::getline(in, line); 
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         std::size_t tab = line.find('\t');
@@ -88,7 +88,7 @@ static bool loadGraph(Graph& g) {
     });
     if (!ok) return false;
 
-    // Name lookup: lowercase name -> every actor with that name.
+   
     g.byName.reserve(g.actorNames.size());
     for (std::size_t i = 0; i < g.actorNames.size(); i++)
         g.byName[lower(g.actorNames[i])].push_back(static_cast<int>(i));
@@ -155,9 +155,7 @@ static SearchResult bfsSearch(const Graph& g, int src, int dst) {
     return r;
 }
 
-// Bidirectional BFS: search from both actors at once and stop when the two
-// searches meet. Each turn expands one whole level of the smaller frontier;
-// finishing the level before stopping keeps the chain as short as possible.
+
 static SearchResult bidirectionalSearch(const Graph& g, int src, int dst) {
     auto t0 = std::chrono::steady_clock::now();
     SearchResult r;
@@ -170,7 +168,7 @@ static SearchResult bidirectionalSearch(const Graph& g, int src, int dst) {
         return r;
     }
 
-    // Side 0 searches from src, side 1 searches from dst.
+    
     std::vector<int> dist[2], parentActor[2], parentMovie[2];
     std::vector<char> movieSeen[2];
     std::vector<int> frontier[2];
@@ -216,7 +214,7 @@ static SearchResult bidirectionalSearch(const Graph& g, int src, int dst) {
 
     if (best != -1) {
         r.found = true;
-        // src ... meet
+        
         for (int cur = meet; cur != src; cur = parentActor[0][cur]) {
             r.actors.push_back(cur);
             r.movies.push_back(parentMovie[0][cur]);
