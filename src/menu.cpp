@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <map>
 
 #include <queue>
@@ -59,6 +60,13 @@ static bool forEachRow(const std::string& path, F onRow) {
     return true;
 }
 
+static void buildNameIndex(Graph& g) {
+    // Name lookup: lowercase name -> every actor with that name.
+    g.byName.reserve(g.actorNames.size());
+    for (std::size_t i = 0; i < g.actorNames.size(); i++)
+        g.byName[lower(g.actorNames[i])].push_back(static_cast<int>(i));
+}
+
 static bool loadGraph(Graph& g) {
     std::unordered_map<std::string, int> movieIndex, actorIndex;
     movieIndex.reserve(800000);
@@ -89,10 +97,78 @@ static bool loadGraph(Graph& g) {
     if (!ok) return false;
 
    
-    g.byName.reserve(g.actorNames.size());
-    for (std::size_t i = 0; i < g.actorNames.size(); i++)
-        g.byName[lower(g.actorNames[i])].push_back(static_cast<int>(i));
+    buildNameIndex(g);
     return true;
+}
+
+// The small data files stored in git (see scripts/pack_data.py).
+static bool loadPacked(Graph& g, const std::string& dir) {
+    auto readLines = [](const std::string& path, std::vector<std::string>& out) {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return false;
+        std::string line;
+        while (std::getline(in, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            out.push_back(std::move(line));
+        }
+        return true;
+    };
+    if (!readLines(dir + "actors.txt", g.actorNames) || !readLines(dir + "movies.txt", g.movieTitles)) {
+        std::cout << "Could not read the files in " << dir << "\n";
+        return false;
+    }
+
+    std::ifstream in(dir + "credits.bin", std::ios::binary);
+    if (!in) { std::cout << "Could not open " << dir << "credits.bin\n"; return false; }
+    std::vector<unsigned char> buf((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (buf.size() < 12) { std::cout << "credits.bin is too small\n"; return false; }
+    auto u32 = [&](std::size_t at) {
+        return static_cast<std::size_t>(buf[at]) | (static_cast<std::size_t>(buf[at + 1]) << 8) |
+               (static_cast<std::size_t>(buf[at + 2]) << 16) | (static_cast<std::size_t>(buf[at + 3]) << 24);
+    };
+    std::size_t A = u32(0), M = u32(4);
+    if (A != g.actorNames.size() || M != g.movieTitles.size()) {
+        std::cout << "The files in " << dir << " do not match each other.\n";
+        return false;
+    }
+
+    g.actorMovies.assign(A, {});
+    g.movieActors.assign(M, {});
+    std::size_t p = 12;
+    auto readVarint = [&]() {
+        std::size_t value = 0;
+        int shift = 0;
+        while (p < buf.size()) {
+            unsigned char b = buf[p++];
+            value |= static_cast<std::size_t>(b & 127) << shift;
+            if (!(b & 128)) break;
+            shift += 7;
+        }
+        return value;
+    };
+    for (std::size_t m = 0; m < M; m++) {
+        std::size_t count = readVarint(), actor = 0;
+        g.movieActors[m].reserve(count);
+        for (std::size_t j = 0; j < count; j++) {
+            actor += readVarint();
+            if (actor >= A) { std::cout << "credits.bin is damaged.\n"; return false; }
+            g.movieActors[m].push_back(static_cast<int>(actor));
+            g.actorMovies[actor].push_back(static_cast<int>(m));
+            g.connections++;
+        }
+    }
+    buildNameIndex(g);
+    return true;
+}
+
+// Finds packed/ in the current folder or a folder above it, so the program also
+// works when an IDE starts it from a build folder such as cmake-build-debug.
+static std::string findPackedDir() {
+    for (const char* prefix : {"", "../", "../../"}) {
+        std::string dir = std::string(prefix) + "packed/";
+        if (std::filesystem::exists(dir + "credits.bin")) return dir;
+    }
+    return "";
 }
 
 
@@ -364,7 +440,13 @@ static void runBenchmark(const Graph& g, int pairs) {
 int main() {
     std::cout << "Loading data (this takes a few seconds)...\n";
     Graph g;
-    if (!loadGraph(g)) return 1;
+    std::string packed = findPackedDir();
+    if (!packed.empty()) {
+        if (!loadPacked(g, packed)) return 1;
+    } else if (!loadGraph(g)) {
+        std::cout << "Could not find the data. The packed/ folder should be next to src/.\n";
+        return 1;
+    }
 
     while (true) {
         std::cout << "\n+-------------------------------------------+\n"

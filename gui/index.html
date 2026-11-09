@@ -110,7 +110,7 @@ const tick = () => new Promise(r => setTimeout(r, 20));
 let A = 0, M = 0, N = 0;
 let names = [], titles = [], off = null, adj = null, didx = null;
 
-async function fetchGz(url, label) {
+async function fetchBytes(url, label) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('could not download ' + url + ' (' + res.status + ')');
   const total = +res.headers.get('content-length') || 0;
@@ -122,18 +122,14 @@ async function fetchGz(url, label) {
     const now = performance.now();
     if (now - last > 150) { last = now; $('#loaded').textContent = 'Loading ' + label + ' ' + (total ? Math.round(got / total * 100) + '%' : (got / 1e6).toFixed(1) + ' MB') + '...'; }
   }
-  $('#loaded').textContent = 'Unpacking ' + label + '...'; await tick();
-  const bin = atob((await new Blob(parts).text()).trim()), bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-  return new Response(stream).arrayBuffer();
+  return new Blob(parts).arrayBuffer();
 }
 
 async function loadData() {
   const t0 = performance.now(), dec = new TextDecoder('utf-8');
-  names = dec.decode(await fetchGz('data/names.txt', 'actors')).split('\n');
-  titles = dec.decode(await fetchGz('data/titles.txt', 'movies')).split('\n');
-  const buf = await fetchGz('data/edges.txt', 'credits');
+  names = dec.decode(await fetchBytes('../packed/actors.txt', 'actors')).split('\n');
+  titles = dec.decode(await fetchBytes('../packed/movies.txt', 'movies')).split('\n');
+  const buf = await fetchBytes('../packed/credits.bin', 'credits');
   $('#loaded').textContent = 'Building the graph...'; await tick();
   const head = new DataView(buf, 0, 12);
   A = head.getUint32(0, true); M = head.getUint32(4, true); const E = head.getUint32(8, true); N = A + M;
