@@ -7,32 +7,16 @@ Group 28 project: how many movies apart are two actors? CoStar searches the IMDb
 
 The chain is printed as `Actor -> Movie -> Actor -> ...`, and "N movies apart" is the number of movies in that chain.
 
-## Requirements
+## Quick start (no data download needed)
 
-- A C++17 compiler (`g++`)
-- Python 3 (only for preparing the data, and for the optional GUI server)
-- The IMDb datasets: `title.basics.tsv.gz`, `title.principals.tsv.gz`, `name.basics.tsv.gz` from https://datasets.imdbws.com/
-
-## 1. Prepare the data
-
-Put the three IMDb files in `data/raw/`, then from the project folder run:
-
-```
-python scripts/prepare_data.py
-```
-
-This creates `data/processed/movies.tsv`, `actors.tsv` and `credits.tsv`. The `data/` folder is ignored by git, so every teammate prepares it once on their own computer.
-
-## 2. Run the menu program
-
-From the project folder (it reads `data/processed/` using paths relative to where you run it):
+The cleaned IMDb data is already in the `packed/` folder (about 45 MB), so you only need a C++17 compiler. From the project folder:
 
 ```
 g++ -std=c++17 -O2 -o costar_menu src/menu.cpp
 ./costar_menu
 ```
 
-On Windows PowerShell use `.\costar_menu.exe`. Loading takes about 10–15 seconds.
+On Windows PowerShell use `.\costar_menu.exe`. Loading takes a few seconds. The program finds `packed/` in the current folder or one or two folders above it, so it also works when an IDE starts it from a build folder.
 
 | Option | What it does |
 |---|---|
@@ -42,37 +26,49 @@ On Windows PowerShell use `.\costar_menu.exe`. Loading takes about 10–15 secon
 
 `results/benchmark.csv` columns: `algorithm` (`bfs` or `bidirectional`), `length`, `time_ms`, `actors_checked`, `movies_checked`, `bytes` (estimated memory).
 
-## 3. Run the original single-pair program
+## Graph GUI (in a browser)
+
+`gui/index.html` is a visual version that runs both searches on the full IMDb data in the browser. It draws the chain and a sample of the nodes each search checked. It reads the same `packed/` folder, so nothing needs to be uploaded.
+
+From the **project folder** (not from `gui/`):
+
+```
+python -m http.server 8000
+```
+
+Then open http://localhost:8000/gui/. With VS Code Live Server, right-click `gui/index.html` and choose "Open with Live Server". Opening `index.html` by double-clicking won't work, because the browser blocks loading the data files that way.
+
+## Original single-pair program
+
+`src/main.cpp` runs one hardcoded pair through both searches and warns if they disagree on the chain length. It reads `data/processed/*.tsv`, so it needs the data from the next section.
 
 ```
 g++ -std=c++17 -O2 -o costar src/main.cpp
 ./costar
 ```
 
-This runs one hardcoded pair through both searches and warns if they disagree on the chain length.
+Run it from the project folder. Do not build `src/main.cpp` and `src/menu.cpp` together: each has its own `main()`.
 
-## 4. Graph GUI (optional, in a browser)
+## Rebuilding the data (optional)
 
-The `gui/` folder is a visual version that runs both searches on the full IMDb data in the browser, with no file upload. It draws the chain and a sample of the nodes each search checked.
+You only need this for `src/main.cpp` or to rebuild `packed/`.
 
-```
-cd gui
-python -m http.server 8000
-```
+1. Download `title.basics.tsv.gz`, `title.principals.tsv.gz` and `name.basics.tsv.gz` from https://datasets.imdbws.com/ into `data/raw/` (about 1.3 GB).
+2. `python scripts/prepare_data.py` creates `data/processed/movies.tsv`, `actors.tsv` and `credits.tsv`.
+3. `python scripts/pack_data.py` creates the small files in `packed/` from those.
 
-Open http://localhost:8000. With VS Code Live Server, right-click `gui/index.html` and choose "Open with Live Server". Opening `index.html` by double-clicking won't work because the browser blocks loading the data files.
-
-`gui/data/` is about 36 MB, so keep `gui/` out of git.
+`data/` is ignored by git because it is too large. `packed/` is in git.
 
 ## Project layout
 
 ```
-src/main.cpp         BFS and bidirectional BFS, single hardcoded pair
 src/menu.cpp         menu, name lookup, benchmark (BFS vs bidirectional)
-scripts/prepare_data.py   cleans the IMDb files into data/processed/
+src/main.cpp         BFS and bidirectional BFS, single hardcoded pair
+packed/              cleaned data used by the menu program and the GUI
 gui/                 browser version with graph drawing
-data/                raw and processed data (not in git)
+scripts/             prepare_data.py (raw -> data/processed), pack_data.py (-> packed/)
 results/             benchmark.csv written by the menu program
+data/                raw and processed data (not in git)
 ```
 
 ## Notes
