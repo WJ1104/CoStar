@@ -127,8 +127,8 @@ async function fetchBytes(url, label) {
 
 async function loadData() {
   const t0 = performance.now(), dec = new TextDecoder('utf-8');
-  names = dec.decode(await fetchBytes('../packed/actors.txt', 'actors')).split('\n');
-  titles = dec.decode(await fetchBytes('../packed/movies.txt', 'movies')).split('\n');
+  names = dec.decode(await fetchBytes('../packed/actors.txt', 'actors')).split(/\r?\n/);
+  titles = dec.decode(await fetchBytes('../packed/movies.txt', 'movies')).split(/\r?\n/);
   const buf = await fetchBytes('../packed/credits.bin', 'credits');
   $('#loaded').textContent = 'Building the graph...'; await tick();
   const head = new DataView(buf, 0, 12);

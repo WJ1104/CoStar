@@ -1,0 +1,3 @@
+# Keep the packed data byte-for-byte; Windows must not change its line endings.
+packed/* -text
+*.bin binary
